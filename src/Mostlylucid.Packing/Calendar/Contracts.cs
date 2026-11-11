@@ -61,7 +61,7 @@ public enum SearchOutcome { Found, NoMatch, Incomplete }
 public sealed record SearchResult(SearchOutcome Outcome, IReadOnlyList<CalendarMatch> Matches,
     bool CandidatesComplete, long Version, SearchCursor? Cursor)
 {
-    public CalendarMatch? Best => Matches.FirstOrDefault();
+    public CalendarMatch? Best => Matches.Count == 0 ? null : Matches[0];
 }
 
 public sealed record FitResult(bool Fits, string? Reason, bool Complete = true);
