@@ -1,0 +1,82 @@
+name: Release packages
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+concurrency:
+  group: nuget-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Resolve release version
+        id: version
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          version="${RELEASE_TAG#v}"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid version tag" >&2
+            exit 1
+          fi
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+      - name: Build and test
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          dotnet restore Mostlylucid.Packing.slnx
+          dotnet build Mostlylucid.Packing.slnx -c Release --no-restore -p:Version="$VERSION"
+          dotnet test Mostlylucid.Packing.slnx -c Release --no-build --no-restore
+      - name: Pack release artifacts
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+        shell: bash
+        run: |
+          for project in src/*/*.csproj; do
+            dotnet pack "$project" -c Release --no-build --no-restore -p:Version="$VERSION" -o artifacts
+          done
+      - name: Verify actual NuGet consumption
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          dotnet restore samples/PackageConsumer -p:Version="$VERSION" --source "$GITHUB_WORKSPACE/artifacts" --source https://api.nuget.org/v3/index.json
+          dotnet build samples/PackageConsumer -c Release --no-restore -p:Version="$VERSION"
+          dotnet samples/PackageConsumer/bin/Release/net10.0/PackageConsumer.dll
+      - uses: actions/upload-artifact@v4
+        with:
+          name: verified-packages
+          path: artifacts/
+  publish:
+    needs: verify
+    runs-on: ubuntu-latest
+    environment: nuget
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - uses: actions/download-artifact@v4
+        with:
+          name: verified-packages
+          path: artifacts
+      - uses: NuGet/login@v1
+        id: login
+        with:
+          user: mostlylucid
+      - name: Push the verified packages
+        env:
+          NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
+        shell: bash
+        run: |
+          for package in artifacts/*.nupkg; do
+            dotnet nuget push "$package" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json
+          done

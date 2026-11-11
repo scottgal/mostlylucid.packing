@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/samples/">
+    <Project Path="samples/Salon/Salon.csproj" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/Mostlylucid.Packing.OrTools/Mostlylucid.Packing.OrTools.csproj" />
+    <Project Path="src/Mostlylucid.Packing.Sqlite/Mostlylucid.Packing.Sqlite.csproj" />
+    <Project Path="src/Mostlylucid.Packing/Mostlylucid.Packing.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Mostlylucid.Packing.Tests/Mostlylucid.Packing.Tests.csproj" />
+  </Folder>
+</Solution>
