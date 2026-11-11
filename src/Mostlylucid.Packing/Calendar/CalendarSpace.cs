@@ -107,6 +107,20 @@ public sealed class CalendarSpace
     public BlockPage GetBlocks(DateTimeOffset from, DateTimeOffset to, IReadOnlyList<string> resources, int limit = 1000) =>
         _store.GetBlocks(Window(new Period(from, to)), resources, limit);
 
+    public BlockViewPage GetBlockPage(DateTimeOffset from, DateTimeOffset to, IReadOnlyList<string> resources,
+        int limit = 1000, BlockPageCursor? after = null) =>
+        Projections().GetBlockPage(Window(new Period(from, to)), resources, limit, after);
+
+    public BlockDelta GetBlockChanges(BlockViewToken since, int limit = 1000) =>
+        Projections().GetBlockChanges(since, limit);
+
+    public CapacityView GetCapacityBlocks(DateTimeOffset from, DateTimeOffset to, IReadOnlyList<string> resources,
+        TimeSpan resolution, int maxCells = 1_000_000) =>
+        Projections().GetCapacityBlocks(Window(new Period(from, to)), resources, resolution, maxCells);
+
+    private IBlockProjectionStore Projections() => _store as IBlockProjectionStore ??
+        throw new NotSupportedException("This store does not implement block projections.");
+
     internal SearchResult Search(IReadOnlyList<Period> periods, IReadOnlyList<BookingRequest> requests,
         IReadOnlyList<MatchCriterion> criteria, int limit, SearchCursor? cursor, int direction)
     {
@@ -148,6 +162,10 @@ public sealed class CalendarSpace
         return new(matches.Length > 0 ? SearchOutcome.Found : complete ? SearchOutcome.NoMatch : SearchOutcome.Incomplete,
             Array.AsReadOnly(matches), complete, snapshot.Version, next);
     }
+
+    internal SearchResult FeasiblePool(IReadOnlyList<Period> periods, IReadOnlyList<BookingRequest> requests,
+        IReadOnlyList<MatchCriterion> criteria) =>
+        Search(periods, requests, criteria, _definition.CandidateLimit, null, 0);
 
     internal BookingRequest Single(TimeSpan? size, BookingRequirements requirement)
     {
@@ -346,6 +364,7 @@ public sealed class CalendarQuery
         [_space.Single(_size, restrictions)], _criteria);
     public CalendarQuery OrderBy(MatchCriterion criterion) => new(_space, _periods, _size, _requests, [criterion]);
     public CalendarQuery ThenBy(MatchCriterion criterion) => new(_space, _periods, _size, _requests, [.. _criteria, criterion]);
+    public SearchResult GetFeasibleCandidates() => _space.FeasiblePool(_periods, _requests, _criteria);
     public SearchResult TopK(int count) => _space.Search(_periods, _requests, _criteria, count, null, 0);
     public SearchResult FindBest() => TopK(1);
     public SearchResult Nearest(DateTimeOffset to) => OrderBy(Criteria.Nearest(to)).FindBest();

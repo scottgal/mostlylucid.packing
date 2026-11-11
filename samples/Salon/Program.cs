@@ -4,6 +4,7 @@ using Mostlylucid.Packing.OrTools;
 using Mostlylucid.Packing.Planning;
 using Mostlylucid.Packing.Spatial;
 using Mostlylucid.Packing.Sqlite;
+using Mostlylucid.Packing.Relevance;
 using SalonExample;
 
 var definition = SalonFixture.Create();
@@ -41,3 +42,18 @@ var boxes = Pack.Spatial3D(new Box3D(4, 2, 2), [new(0, 0, 0), new(2, 0, 0)], new
     .Plan([new("a", new Box3D(2, 2, 2)), new("b", new Box3D(2, 2, 2))], TimeSpan.FromSeconds(2));
 if (boxes.Placements.Count != 2) throw new Exception("Physical packing failed.");
 Console.WriteLine($"Spatial plan: {boxes.Placements.Count} boxes.");
+
+
+var projection = calendar.GetCapacityBlocks(SalonFixture.At(10), SalonFixture.At(11), ["sarah"], TimeSpan.FromMinutes(15));
+if (!projection.Blocks.Any(block => block.RemainingMin != block.RemainingMax))
+    throw new Exception("Coarse blocks lost mixed availability.");
+var page = calendar.GetBlockPage(SalonFixture.At(10), SalonFixture.At(11), ["sarah"], limit: 1);
+if (page.Next is null) throw new Exception("The display page should have a continuation.");
+Console.WriteLine($"Capacity runs: {projection.Blocks.Count}; detailed block page={page.Blocks.Count}");
+
+var exampleRanker = new RelevanceRanker("configured-later-time", (pool, _) =>
+    ValueTask.FromResult<IReadOnlyList<CandidateRelevance>>(pool.Select(match =>
+        new CandidateRelevance(match.Id, match.Start.TimeOfDay.TotalMinutes, [])).ToArray()));
+var ranked = await query.WithRelevance(exampleRanker).TopKAsync(2);
+if (ranked.Best?.Match.Start != SalonFixture.At(13, 45)) throw new Exception("Feasible-pool ranking failed.");
+Console.WriteLine($"Ranking adapter selected {ranked.Best.Match.Start:HH:mm}");

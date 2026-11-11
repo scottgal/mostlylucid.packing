@@ -2,7 +2,7 @@
 
 Defined dimensional spaces for calendar scheduling, rotas and finite 3D packing. The package shares resource constraints, selection and verification across typed profiles. SQLite persists calendar capacity and reservations, and OR-Tools supplies an optional optimiser.
 
-This is an initial .NET 10 preview. The projects produce `mostlylucid.packing`, `mostlylucid.packing.sqlite` and `mostlylucid.packing.ortools`.
+This is an initial .NET 10 preview. The projects produce `mostlylucid.packing`, `mostlylucid.packing.sqlite`, `mostlylucid.packing.ortools` and `mostlylucid.packing.relevance`.
 
 ```csharp
 using var store = new SqliteCalendarStore("salon.db", definition);
@@ -58,7 +58,9 @@ Use an optional path argument to persist the example. A confirmed appointment in
 
 The SQLite store binds one definition to one database file and rejects a different definition on reopen. `SetCapacity` changes resource capacity transactionally and rejects reductions below active commitments. Confirmation retains occupancy. Cancellation or expiry releases it once. Command retries return their original result and deadline, and conflicting reuse of a command ID fails. Readers use a consistent SQLite snapshot. Independent connections coordinate holds through immediate write transactions with bounded SQLite busy admission.
 
-`GetBlocks` returns bounded, resource-filtered allocation blocks in a period, their revision and a truncation flag. Intervals retain original endpoints for clipping in a view. Blocks describe holds and confirmations. Availability tiles, paged delta feeds and aggregate visual projections are subsequent provider work.
+`GetBlocks` returns bounded, resource-filtered allocation blocks in a period, their revision and a truncation flag. Intervals retain original endpoints for clipping in a view. Blocks describe holds and confirmations. Use `GetBlockPage` for keyset pagination, `GetBlockChanges` for scoped upserts/tombstones and `GetCapacityBlocks` for coalesced capacity summaries. View tokens bind the database identity, definition, period and resource selection. A write outside that selection advances the stream cursor while preserving its view revision. Relevant edits during pagination return `ResnapshotRequired`. Delta overflow or pruned history also requests a bounded resnapshot.
+
+Capacity blocks retain minimum and maximum remaining units for the requested resolution, including mixed buckets. They describe resource capacity rather than a service-fit guarantee. The provider reads only selected resources for this projection, and an explicit cell budget bounds its work. Hold expiry advances projection changes during quiet reads. `PruneProjectionHistory` sets the history floor for old tokens. Applications authorise resource visibility before each request; a token is a query correlation value rather than a credential.
 
 ## Rota and physical profiles
 
@@ -68,9 +70,25 @@ The SQLite store binds one definition to one database file and rejects a differe
 
 The default batch strategy is a deterministic greedy baseline. Add `mostlylucid.packing.ortools` and pass `CpSatPackingSolver` for maximum request count followed by preference utility. `IncrementalPackingSolver` reuses unchanged, proven component results. Solver time limits bound search, while preprocessing and validation also take time. Cancellation is checked around each bounded native solve.
 
+## Relevance connection
+
+`mostlylucid.packing.relevance` adds an asynchronous, dependency-neutral adapter. The scorer receives the full bounded feasible pool before top-K selection. It must score or explicitly exclude every input ID. Unknown IDs, duplicates, incomplete responses and non-finite scores fail. Returned matches preserve the source revision and candidate completeness. Authoritative holds still check current rules and capacity.
+
+```csharp
+var result = await query.WithRelevance(ranker).TopKAsync(5);
+```
+
+The supplied-candidate scoring operation belongs in the Relevance engine. This assembly maps appointment features and results through a callback, allowing the host to use its configured engine and storage provider. The optional integration example connects to the actual local `Mostlylucid.Relevance` project and its `RankCandidatesAsync` API.
+
+```bash
+dotnet run --project integration/Relevance -p:RelevanceSourceRoot=/path/to/mostlylucidweb
+```
+
+That example learns a preference for Sarah at 13:00, excludes that appointment after it is held, checks cold-start results and verifies that transient appointment candidates were never saved to the relevance catalogue. It stays outside the main solution because the Relevance SDK is developed in a separate local repository. The ordinary salon/packed-consumer example exercises the adapter contract with a configured deterministic scorer. Ranking scores express relative preference and carry no probability interpretation.
+
 ## Initial scope
 
-The calendar profile implements fixed stage offsets and same-start linked groups. Variable stage timing, recurring local calendars, dynamic policy migrations, relevance-based ranking and advanced projection caching remain extensions. Calendar definitions use explicit absolute periods. MIT licensing applies to this repository; the optional solver retains its own dependency licences.
+The calendar profile implements fixed stage offsets and same-start linked groups. Variable stage timing, recurring local calendars, dynamic policy migrations, automatic relevance feature encoding and materialised tile caches remain extensions. Calendar definitions use explicit absolute periods. MIT licensing applies to this repository; the optional solver retains its own dependency licences.
 
 The provider stores capacity cells for the configured horizon and retains command/change history. Configure finite horizons and candidate limits appropriate to the application. Production retention and migration policy remain application/provider work.
 
@@ -80,10 +98,11 @@ The provider stores capacity cells for the configured horizon and retains comman
 dotnet pack src/Mostlylucid.Packing -c Release -o artifacts
 dotnet pack src/Mostlylucid.Packing.Sqlite -c Release -o artifacts
 dotnet pack src/Mostlylucid.Packing.OrTools -c Release -o artifacts
+dotnet pack src/Mostlylucid.Packing.Relevance -c Release -o artifacts
 dotnet restore samples/PackageConsumer --source ./artifacts --source https://api.nuget.org/v3/index.json
 dotnet run --project samples/PackageConsumer -c Release --no-restore
 ```
 
 The consumer uses package references and runs the same reference example. The release workflow tests and packs a tagged version, exercises the package consumer, then publishes the verified artifacts through GitHub OIDC.
 
-Configure the NuGet trusted-publishing policy for owner `scottgal`, repository `mostlylucid.packing`, workflow `release.yml` and environment `nuget`. Its NuGet identity is `mostlylucid`. Publish with a version tag such as `v0.1.0-preview.1` once repository access, package ownership and trust policy are configured. No release was performed during the initial local implementation.
+Configure the NuGet trusted-publishing policy for owner `scottgal`, repository `mostlylucid.packing`, workflow `release.yml` and environment `nuget`. Its NuGet identity is `mostlylucid`. Publish with a version tag such as `v0.1.0-preview.2` once repository access, package ownership and trust policy are configured. No release was performed during the initial local implementation.

@@ -9,7 +9,7 @@ using Mostlylucid.Packing.Calendar;
 namespace Mostlylucid.Packing.Sqlite;
 
 /// <summary>One authorised calendar per SQLite file. Each write obtains an immediate transaction.</summary>
-public sealed class SqliteCalendarStore : ICalendarStore, IDisposable
+public sealed partial class SqliteCalendarStore : ICalendarStore, IDisposable
 {
     private readonly string _connectionString;
     private readonly CalendarDefinition _definition;
@@ -97,6 +97,7 @@ public sealed class SqliteCalendarStore : ICalendarStore, IDisposable
                 }
             }
         }
+        InitializeProjections(_keeper, transaction);
         transaction.Commit();
     }
 
@@ -201,7 +202,7 @@ public sealed class SqliteCalendarStore : ICalendarStore, IDisposable
                 Execute(connection, transaction,
                     "INSERT INTO capacity VALUES($resource,$slot,$units) ON CONFLICT(resource,slot) DO UPDATE SET units=excluded.units;",
                     ("$resource", resource), ("$slot", slot), ("$units", units));
-            reply = new(true, "CapacityChanged", null, Changed(connection, transaction, "capacity", null));
+            reply = new(true, "CapacityChanged", null, Changed(connection, transaction, "capacity", null, (resource, window)));
         }
         Remember(connection, transaction, commandId, fingerprint, reply);
         transaction.Commit();
@@ -280,19 +281,29 @@ public sealed class SqliteCalendarStore : ICalendarStore, IDisposable
         return reply;
     }
 
-    private CalendarSnapshot Capture(SqliteConnection connection, SqliteTransaction transaction, Period window)
+    private CalendarSnapshot Capture(SqliteConnection connection, SqliteTransaction transaction, Period window,
+        IReadOnlyList<string>? resources = null)
     {
         var version = Version(connection, transaction);
         var capacity = new Dictionary<ResourceSlot, int>();
         using (var command = Command(connection, transaction,
-                   "SELECT resource,slot,units FROM capacity WHERE slot>=$first AND slot<$end;",
+                   "SELECT resource,slot,units FROM capacity WHERE slot>=$first AND slot<$end" +
+                   (resources is null ? ";" : $" AND resource IN ({Names("r", resources.Count)});"),
                    ("$first", Floor(window.From)), ("$end", Ceiling(window.To))))
-        using (var reader = command.ExecuteReader())
+        {
+            if (resources is not null) Bind(command, "r", resources);
+            using var reader = command.ExecuteReader();
             while (reader.Read()) capacity.Add(new(reader.GetString(0), reader.GetInt64(1)), reader.GetInt32(2));
+        }
         using var query = Command(connection, transaction, """
             SELECT d.resource,d.start,d.finish,d.units FROM demands d JOIN reservations r ON r.id=d.reservation
             WHERE r.state IN (0,1) AND d.start<$to AND d.finish>$from;
             """, ("$from", window.From.UtcTicks), ("$to", window.To.UtcTicks));
+        if (resources is not null)
+        {
+            query.CommandText = query.CommandText.TrimEnd().TrimEnd(';') + $" AND d.resource IN ({Names("r", resources.Count)});";
+            Bind(query, "r", resources);
+        }
         using var allocations = query.ExecuteReader();
         var used = new Dictionary<ResourceSlot, long>();
         while (allocations.Read())
@@ -361,12 +372,14 @@ public sealed class SqliteCalendarStore : ICalendarStore, IDisposable
         Execute(connection, transaction, "INSERT INTO commands VALUES($id,$fingerprint,$reply);",
             ("$id", id.ToString("N")), ("$fingerprint", fingerprint), ("$reply", JsonSerializer.Serialize(reply)));
 
-    private static long Changed(SqliteConnection connection, SqliteTransaction transaction, string kind, Guid? reservation)
+    private static long Changed(SqliteConnection connection, SqliteTransaction transaction, string kind, Guid? reservation,
+        (string Resource, Period Time)? capacity = null)
     {
         Execute(connection, transaction, "UPDATE state SET version=version+1 WHERE singleton=1;");
         var version = Version(connection, transaction);
         Execute(connection, transaction, "INSERT INTO changes VALUES($version,$kind,$reservation);",
             ("$version", version), ("$kind", kind), ("$reservation", reservation?.ToString("N")));
+        RecordRanges(connection, transaction, version, reservation, capacity);
         return version;
     }
 

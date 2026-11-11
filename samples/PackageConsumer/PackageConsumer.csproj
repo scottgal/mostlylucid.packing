@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><OutputType>Exe</OutputType><IsPackable>false</IsPackable></PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="mostlylucid.packing.relevance" Version="$(Version)" />
     <PackageReference Include="mostlylucid.packing" Version="$(Version)" />
     <PackageReference Include="mostlylucid.packing.sqlite" Version="$(Version)" />
     <PackageReference Include="mostlylucid.packing.ortools" Version="$(Version)" />

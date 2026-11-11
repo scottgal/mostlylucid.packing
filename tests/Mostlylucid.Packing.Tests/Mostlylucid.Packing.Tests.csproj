@@ -6,6 +6,6 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" PrivateAssets="all" />
     <ProjectReference Include="../../src/Mostlylucid.Packing.Sqlite/Mostlylucid.Packing.Sqlite.csproj" />
     <ProjectReference Include="../../src/Mostlylucid.Packing.OrTools/Mostlylucid.Packing.OrTools.csproj" />
-    <Using Include="Xunit" /><Compile Include="../../samples/Salon/SalonFixture.cs" Link="SalonFixture.cs" />
+    <ProjectReference Include="../../src/Mostlylucid.Packing.Relevance/Mostlylucid.Packing.Relevance.csproj" /><Using Include="Xunit" /><Compile Include="../../samples/Salon/SalonFixture.cs" Link="SalonFixture.cs" />
   </ItemGroup>
 </Project>

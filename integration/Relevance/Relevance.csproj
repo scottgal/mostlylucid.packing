@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><IsPackable>false</IsPackable></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="$(RelevanceSourceRoot)/Mostlylucid.Relevance/Mostlylucid.Relevance.csproj" />
+    <ProjectReference Include="../../src/Mostlylucid.Packing.Sqlite/Mostlylucid.Packing.Sqlite.csproj" />
+    <ProjectReference Include="../../src/Mostlylucid.Packing.Relevance/Mostlylucid.Packing.Relevance.csproj" />
+    <Compile Include="../../samples/Salon/SalonFixture.cs" Link="SalonFixture.cs" />
+  </ItemGroup>
+  <Target Name="RequireLocalRelevance" BeforeTargets="CollectPackageReferences">
+    <Error Condition="'$(RelevanceSourceRoot)' == ''" Text="Set RelevanceSourceRoot to the local repository containing Mostlylucid.Relevance." />
+  </Target>
+</Project>
